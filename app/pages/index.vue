@@ -9,6 +9,6 @@ const router = useRouter()
 
 onMounted(() => {
   // Переход на /login сразу после рендера страницы
-  router.replace('/booking/all')
+  router.replace('/dashboard')
 })
 </script>
