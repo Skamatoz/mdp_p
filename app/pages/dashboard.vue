@@ -20,16 +20,35 @@
       <div class="w-full p-1">
         <div class="flex h-fit w-full bg-[#F7F7F8] p-2 gap-2 rounded-xl">
           <button
-            v-for="period in PERIODS"
-            :key="period.value"
-            :class="currentPeriod === period.value ? 'bg-[#1F0B31] text-white' : ''"
-            :aria-pressed="currentPeriod === period.value"
-            :aria-label="`Показать ${period.label.toLowerCase()}`"
-            @click="setPeriod(period.value)"
+            :class="!isGarageView ? 'bg-[#1F0B31] text-white' : ''"
+            :aria-pressed="!isGarageView"
+            aria-label="Показать аренды"
+            @click="isGarageView = false"
             class="py-2 rounded-lg w-full transition-colors duration-200 hover:bg-gray-100"
           >
-            {{ period.label }}
+            Аренды
           </button>
+          <button
+            :class="isGarageView ? 'bg-[#1F0B31] text-white' : ''"
+            :aria-pressed="isGarageView"
+            aria-label="Показать гараж"
+            @click="isGarageView = true"
+            class="py-2 rounded-lg w-full transition-colors duration-200 hover:bg-gray-100"
+          >
+            Гараж
+          </button>
+        </div>
+        <div v-show="!isGarageView" class="flex h-fit w-full bg-[#F7F7F8] p-2 gap-2 rounded-xl mt-2">
+          <select
+            :value="anchorMonth"
+            @change="setAnchorMonth($event.target.value)"
+            aria-label="Выбрать месяц"
+            class="py-2 px-2 rounded-lg w-full transition-colors duration-200 hover:bg-gray-100 capitalize cursor-pointer appearance-none text-center bg-white"
+          >
+            <option v-for="m in monthOptions" :key="m.value" :value="m.value">
+              {{ m.label }}
+            </option>
+          </select>
         </div>
       </div>
 
@@ -249,11 +268,21 @@ function useDebounceFn(fn, delay) {
 }
 
 // Константы
-const PERIODS = [
-  { value: 'this', label: 'Сейчас' },
-  { value: 'past', label: 'Прошлый' },
-  { value: 'garage', label: 'Гараж' }
-]
+// Список месяцев для дропдаунa: текущий + 6 предыдущих
+const MONTH_DEPTH = 7
+
+function monthKey(year, monthIndex) {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`
+}
+
+function parseMonthKey(key) {
+  const [y, m] = key.split('-').map(Number)
+  return { year: y, monthIndex: m - 1 }
+}
+
+function monthLabel(year, monthIndex) {
+  return new Date(year, monthIndex, 1).toLocaleString('ru', { month: 'long', year: 'numeric' })
+}
 
 const VEHICLE_TYPES = [
   { value: 'Bike', label: 'Байки' },
@@ -278,7 +307,25 @@ const firstLetter = computed(() => name.value?.charAt(0) || '?')
 
 // Состояние UI
 const searchTerm = ref('')
-const currentPeriod = ref('this')
+const anchorMonth = ref((() => {
+  const now = new Date()
+  return monthKey(now.getFullYear(), now.getMonth())
+})())
+const isGarageView = ref(false)
+
+// Опции дропдауна: текущий + 6 предыдущих месяцев
+const monthOptions = computed(() => {
+  const opts = []
+  const now = new Date()
+  for (let i = 0; i < MONTH_DEPTH; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    opts.push({
+      value: monthKey(d.getFullYear(), d.getMonth()),
+      label: monthLabel(d.getFullYear(), d.getMonth())
+    })
+  }
+  return opts
+})
 const vehicleType = ref('Bike')
 const showFooter = ref(false)
 const loggingOut = ref(false)
@@ -326,29 +373,20 @@ const coefficients = computed(() => ({
 }))
 
 // Утилиты для работы с датами
+// isCurrentMonth — попадает ли дата в ВЫБРАННЫЙ (anchor) месяц
+// isLastMonth — попадает ли дата в месяц, предшествующий выбранному
 const dateUtils = {
-  getCurrentPeriod() {
-    const now = new Date()
-    return {
-      year: now.getFullYear(),
-      month: now.getMonth()
-    }
-  },
-
   isCurrentMonth(date) {
-    const { year, month } = this.getCurrentPeriod()
+    const { year, monthIndex } = parseMonthKey(anchorMonth.value)
     const d = new Date(date)
-    return d.getFullYear() === year && d.getMonth() === month
+    return d.getFullYear() === year && d.getMonth() === monthIndex
   },
 
   isLastMonth(date) {
-    const { year, month } = this.getCurrentPeriod()
+    const { year, monthIndex } = parseMonthKey(anchorMonth.value)
     const d = new Date(date)
-
-    if (month === 0) {
-      return d.getFullYear() === year - 1 && d.getMonth() === 11
-    }
-    return d.getFullYear() === year && d.getMonth() === month - 1
+    const prev = new Date(year, monthIndex - 1, 1)
+    return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth()
   }
 }
 
@@ -372,7 +410,10 @@ function processVehicles(isBike) {
   const coefficient = isBike ? coefficients.value.bike : coefficients.value.car
 
   return garages.value
-    .filter(g => g.isBike === isBike)
+    .filter(g => isBike
+      ? (g.vehicleType === 'SCOOTER' || g.vehicleType === 'MOTORCYCLE')
+      : g.vehicleType === 'CAR'
+    )
     .map(g => {
       const currentRevenue = sumPaidThisMonth(g.bookings)
       const lastMonthRevenue = sumPaidLastMonth(g.bookings)
@@ -455,60 +496,42 @@ const countBikes = computed(() => totals.value.bike.count)
 const countCars = computed(() => totals.value.car.count)
 
 // Статистика для текущего периода
+const anchorLabel = computed(() => {
+  const { year, monthIndex } = parseMonthKey(anchorMonth.value)
+  return monthLabel(year, monthIndex)
+})
+
 const currentStats = computed(() => {
-  switch (currentPeriod.value) {
-    case 'past':
-      return [
-        {
-          key: 'total-past',
-          title: 'Общая выручка',
-          value: `${(totalBikeRevenueLastMonth.value + totalCarRevenueLastMonth.value).toLocaleString('ru-RU')} ฿`,
-          subtitle: 'За прошлый месяц',
-          color: 'text-orange-500'
-        },
-        {
-          key: 'bike-past',
-          title: 'Выручка байков',
-          value: `${totalBikeRevenueLastMonth.value.toLocaleString('ru-RU')} ฿`,
-          subtitle: 'За прошлый месяц',
-          color: 'text-orange-500'
-        },
-        {
-          key: 'car-past',
-          title: 'Выручка авто',
-          value: `${totalCarRevenueLastMonth.value.toLocaleString('ru-RU')} ฿`,
-          subtitle: 'За прошлый месяц',
-          color: 'text-orange-500'
-        }
-      ]
+  if (!isGarageView.value) {
+    const subtitle = `За ${anchorLabel.value}`
+    return [
+      {
+        key: 'total-current',
+        title: 'Общая выручка',
+        value: `${(totalBikeRevenue.value + totalCarRevenue.value).toLocaleString('ru-RU')} ฿`,
+        subtitle,
+        color: 'text-green-700'
+      },
+      {
+        key: 'bike-current',
+        title: 'Выручка байков',
+        value: `${totalBikeRevenue.value.toLocaleString('ru-RU')} ฿`,
+        subtitle,
+        color: 'text-green-700'
+      },
+      {
+        key: 'car-current',
+        title: 'Выручка авто',
+        value: `${totalCarRevenue.value.toLocaleString('ru-RU')} ฿`,
+        subtitle,
+        color: 'text-green-700'
+      }
+    ]
+  }
 
-    case 'this':
-      return [
-        {
-          key: 'total-current',
-          title: 'Общая выручка',
-          value: `${(totalBikeRevenue.value + totalCarRevenue.value).toLocaleString('ru-RU')} ฿`,
-          subtitle: 'За текущий месяц',
-          color: 'text-green-700'
-        },
-        {
-          key: 'bike-current',
-          title: 'Выручка байков',
-          value: `${totalBikeRevenue.value.toLocaleString('ru-RU')} ฿`,
-          subtitle: 'За текущий месяц',
-          color: 'text-green-700'
-        },
-        {
-          key: 'car-current',
-          title: 'Выручка авто',
-          value: `${totalCarRevenue.value.toLocaleString('ru-RU')} ฿`,
-          subtitle: 'За текущий месяц',
-          color: 'text-green-700'
-        }
-      ]
-
-    case 'garage':
-      return [
+  // garage view
+  return (() => {
+    return [
         {
           key: 'bike-count',
           title: 'Количество байков',
@@ -545,15 +568,12 @@ const currentStats = computed(() => {
           color: 'text-gray-700'
         }
       ]
-
-    default:
-      return []
-  }
+  })()
 })
 
 // Обработчики событий
-function setPeriod(period) {
-  currentPeriod.value = period
+function setAnchorMonth(key) {
+  anchorMonth.value = key
 }
 
 function setVehicleType(type) {
