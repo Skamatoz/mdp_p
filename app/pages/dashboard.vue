@@ -155,10 +155,7 @@
             Модель
           </th>
           <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-            Прош
-          </th>
-          <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-            Этот
+            Доход
           </th>
         </tr>
       </thead>
@@ -176,9 +173,6 @@
             {{ vehicle.name }}
           </td>
           <td class="px-2 py-3 text-sm text-gray-900 font-medium">
-            {{ vehicle.lastMonthRevenue.toLocaleString('ru-RU') }} ฿
-          </td>
-          <td class="px-2 py-3 text-sm text-gray-900 font-medium">
             {{ vehicle.revenue.toLocaleString('ru-RU') }} ฿
           </td>
         </tr>
@@ -186,7 +180,6 @@
       <tfoot class="bg-[#F7F7F8]">
         <tr>
           <td class="px-2 py-2 font-medium">Итого байки</td>
-          <td class="px-2 py-2 font-medium">{{ totalBikeRevenueLastMonth.toLocaleString('ru-RU') }} ฿</td>
           <td class="px-2 py-2 font-medium">{{ totalBikeRevenue.toLocaleString('ru-RU') }} ฿</td>
         </tr>
       </tfoot>
@@ -200,10 +193,7 @@
             Модель
           </th>
           <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-            Прош
-          </th>
-          <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-            Этот
+            Доход
           </th>
         </tr>
       </thead>
@@ -221,9 +211,6 @@
             {{ vehicle.name }}
           </td>
           <td class="px-2 py-3 text-sm text-gray-900 font-medium">
-            {{ vehicle.lastMonthRevenue.toLocaleString('ru-RU') }} ฿
-          </td>
-          <td class="px-2 py-3 text-sm text-gray-900 font-medium">
             {{ vehicle.revenue.toLocaleString('ru-RU') }} ฿
           </td>
         </tr>
@@ -231,7 +218,6 @@
       <tfoot class="bg-[#F7F7F8]">
         <tr>
           <td class="px-2 py-2 font-medium">Итого авто</td>
-          <td class="px-2 py-2 font-medium">{{ totalCarRevenueLastMonth.toLocaleString('ru-RU') }} ฿</td>
           <td class="px-2 py-2 font-medium">{{ totalCarRevenue.toLocaleString('ru-RU') }} ฿</td>
         </tr>
       </tfoot>
@@ -304,8 +290,7 @@ const VEHICLE_TYPES = [
 const SORT_OPTIONS = [
   { key: 'mileageNow', label: 'Пробег' },
   { key: 'price', label: 'Цена' },
-  { key: 'lastMonthRevenue', label: 'Прошлый' },
-  { key: 'revenue', label: 'Текущий' }
+  { key: 'revenue', label: 'Доход' }
 ]
 
 // Композабли и роутер
