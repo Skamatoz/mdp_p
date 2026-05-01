@@ -38,17 +38,25 @@
             Гараж
           </button>
         </div>
-        <div v-show="!isGarageView" class="flex h-fit w-full bg-[#F7F7F8] p-2 gap-2 rounded-xl mt-2">
-          <select
-            :value="anchorMonth"
-            @change="setAnchorMonth($event.target.value)"
-            aria-label="Выбрать месяц"
-            class="py-2 px-2 rounded-lg w-full transition-colors duration-200 hover:bg-gray-100 capitalize cursor-pointer appearance-none text-center bg-white"
+        <div v-show="!isGarageView" class="flex h-fit w-full bg-[#F7F7F8] p-2 gap-2 rounded-xl mt-2 items-stretch">
+          <button
+            @click="goPrevMonth"
+            aria-label="Предыдущий месяц"
+            class="py-2 px-4 rounded-lg bg-white transition-colors duration-200 hover:bg-gray-100"
           >
-            <option v-for="m in monthOptions" :key="m.value" :value="m.value">
-              {{ m.label }}
-            </option>
-          </select>
+            ◀
+          </button>
+          <div class="flex-1 py-2 px-2 rounded-lg bg-white text-center capitalize font-medium select-none">
+            {{ anchorLabel }}
+          </div>
+          <button
+            @click="goNextMonth"
+            :disabled="!canGoForward"
+            aria-label="Следующий месяц"
+            class="py-2 px-4 rounded-lg bg-white transition-colors duration-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ▶
+          </button>
         </div>
       </div>
 
@@ -268,9 +276,6 @@ function useDebounceFn(fn, delay) {
 }
 
 // Константы
-// Список месяцев для дропдаунa: текущий + 6 предыдущих
-const MONTH_DEPTH = 7
-
 function monthKey(year, monthIndex) {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}`
 }
@@ -282,6 +287,13 @@ function parseMonthKey(key) {
 
 function monthLabel(year, monthIndex) {
   return new Date(year, monthIndex, 1).toLocaleString('ru', { month: 'long', year: 'numeric' })
+}
+
+// Сдвиг monthKey на N месяцев. JS Date сам обрабатывает переход через декабрь.
+function shiftMonthKey(key, delta) {
+  const { year, monthIndex } = parseMonthKey(key)
+  const d = new Date(year, monthIndex + delta, 1)
+  return monthKey(d.getFullYear(), d.getMonth())
 }
 
 const VEHICLE_TYPES = [
@@ -313,19 +325,12 @@ const anchorMonth = ref((() => {
 })())
 const isGarageView = ref(false)
 
-// Опции дропдауна: текущий + 6 предыдущих месяцев
-const monthOptions = computed(() => {
-  const opts = []
+// Текущий месяц как граница «вперёд»: правее не пускаем, в будущем данных нет
+const currentMonthKey = computed(() => {
   const now = new Date()
-  for (let i = 0; i < MONTH_DEPTH; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    opts.push({
-      value: monthKey(d.getFullYear(), d.getMonth()),
-      label: monthLabel(d.getFullYear(), d.getMonth())
-    })
-  }
-  return opts
+  return monthKey(now.getFullYear(), now.getMonth())
 })
+const canGoForward = computed(() => anchorMonth.value < currentMonthKey.value)
 const vehicleType = ref('Bike')
 const showFooter = ref(false)
 const loggingOut = ref(false)
@@ -574,6 +579,15 @@ const currentStats = computed(() => {
 // Обработчики событий
 function setAnchorMonth(key) {
   anchorMonth.value = key
+}
+
+function goPrevMonth() {
+  anchorMonth.value = shiftMonthKey(anchorMonth.value, -1)
+}
+
+function goNextMonth() {
+  if (!canGoForward.value) return
+  anchorMonth.value = shiftMonthKey(anchorMonth.value, 1)
 }
 
 function setVehicleType(type) {
