@@ -57,47 +57,43 @@ const password = ref('')
 const errorMessage = ref('')
 const router = useRouter()
 
+// Коды отказа новой CRM → текст на экране
+const LOGIN_ERRORS = {
+  AUTH_INVALID: 'Неверный email или пароль',
+  AUTH_BLOCKED: 'Доступ в кабинет закрыт',
+  RATE_LIMITED: 'Слишком много попыток, попробуйте через 15 минут',
+  VALIDATION:   'Введите email и пароль'
+}
+
 const handleLogin = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    // Отправляем запрос на авторизацию к бэкенду
-    const response = await fetch(`${config.public.apiBase}/api/auth/login`, {
+    // Вход в кабинет партнёра новой CRM: сессия ставится httpOnly-cookie
+    const response = await fetch(`${config.public.apiBase}/api/partner-portal/login`, {
       method:      'POST',
       headers:     { 'Content-Type': 'application/json' },
       credentials: 'include',             // ← вот это важно!
       body:        JSON.stringify({ email: email.value, password: password.value })
     })
     if (!response.ok) {
-      // Если пришел ответ об ошибке (401 Unauthorized)
-      const errorData = await response.json()
-      errorMessage.value = errorData.message || 'Ошибка авторизации'
+      const errorData = await response.json().catch(() => null)
+      errorMessage.value = LOGIN_ERRORS[errorData?.error?.code] || 'Ошибка авторизации'
       return
     }
-    const data = await response.json()
-    // console.log(data.user.role)
-    // console.log(data.user.name)
-    // console.log(data.user.email)
+    const partner = await response.json()
 
-    // Сохраняем токен и роль пользователя в localStorage
-    localStorage.setItem('role', data.user.role)
-    localStorage.setItem('id', data.user.id)
+    localStorage.setItem('id', partner.id)
     localStorage.setItem('auth', 'autIsDone')
-    localStorage.setItem('email', data.user.email)
-    localStorage.setItem('name', data.user.name)
-    localStorage.setItem('userName', data.user.name || '')  // можно сохранить имя, если нужно
-    // Перенаправляем пользователя на главную страницу (или другую защищенную страницу)
-    loading.value = false
+    localStorage.setItem('email', partner.email || email.value)
+    localStorage.setItem('name', partner.name || partner.tag)
     loadingText.value = true
-
-    if(data.user.role === 'GUEST'){
-      router.push('/dashboard')
-    } else {
-      router.push('/403')
-    }
+    router.push('/dashboard')
   } catch (err) {
     console.error('Login request failed:', err)
     errorMessage.value = 'Ошибка соединения с сервером'
+  } finally {
+    loading.value = false
   }
 }
 </script>

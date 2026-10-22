@@ -102,7 +102,6 @@
             type="text"
             placeholder="Модель или номер"
             class="h-full p-2 px-4 border-2 border-[#E9E6EC] rounded-xl w-full focus:border-[#1F0B31] focus:outline-none transition-colors"
-            @input="onSearchInput"
           />
         </div>
         <button
@@ -169,6 +168,9 @@
               <span class="p-1 text-xs text-gray-500 rounded-xl font-normal">
                 [{{ vehicle.mileageNow.toLocaleString('ru-RU') }} км.]
               </span>
+              <span v-if="vehicle.isSold" class="p-1 text-xs text-gray-500 rounded-xl font-normal">
+                продан
+              </span>
             </div>
             {{ vehicle.name }}
           </td>
@@ -206,6 +208,9 @@
               </span>
               <span class="p-1 text-xs text-gray-500 rounded-xl font-normal">
                 [{{ vehicle.mileageNow.toLocaleString('ru-RU') }} км.]
+              </span>
+              <span v-if="vehicle.isSold" class="p-1 text-xs text-gray-500 rounded-xl font-normal">
+                продан
               </span>
             </div>
             {{ vehicle.name }}
@@ -246,20 +251,8 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-
-// Встроенные компоненты (без defineAsyncComponent)
-// Они будут определены в template как обычные элементы
-
-// Дебаунс-функция (простая реализация без @vueuse/core)
-function useDebounceFn(fn, delay) {
-  let timeoutId
-  return function(...args) {
-    clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => fn.apply(this, args), delay)
-  }
-}
 
 // Константы
 function monthKey(year, monthIndex) {
@@ -324,99 +317,47 @@ const loggingOut = ref(false)
 const sortKey = ref('revenue')
 const sortDirection = ref('desc')
 
-// Параметры запроса
-const params2 = reactive({ q: '' })
-
 // Вычисляемые свойства для UI
 const showVehicleToggle = computed(() => countCars.value > 0)
 
-// API запросы
-const { data: partnerData } = await useFetch(`${config.public.apiBase}/api/partner/kabinet/all`, {
-  credentials: 'include',
-  params: { email: email.value }
-})
+// Сессия кончилась или её нет — на вход
+function dropSession() {
+  const keysToRemove = ['id', 'role', 'email', 'userName', 'auth', 'name']
+  keysToRemove.forEach(key => localStorage.removeItem(key))
+}
 
-const partnerId = computed(() => partnerData.value?.data || null)
-
+// API: ТС партнёра и его доход за выбранный месяц (новая CRM).
+// Доход считает CRM — тот же, что в карточке партнёра; смена месяца перезапрашивает.
 const { data, pending, error, refresh } = await useFetch(
-  () => partnerId.value ? `${config.public.apiBase}/api/partner/portal/${partnerId.value}` : null,
+  `${config.public.apiBase}/api/partner-portal/month`,
   {
     credentials: 'include',
-    params: params2,
-    immediate: true,
+    query: { month: anchorMonth },
     onResponseError({ response }) {
+      if (response.status === 401) {
+        dropSession()
+        router.replace('/login')
+        return
+      }
       console.error('API Error:', response.status)
     }
   }
 )
 
-// Данные партнера и гаражей
-const partner = computed(() =>
-  data.value?.data || { garages: [], royaltyBike: 0, royaltyCar: 0 }
-)
-const garages = computed(() => partner.value.garages || [])
-
-// Коэффициенты выручки
-const coefficients = computed(() => ({
-  bike: partner.value.royaltyBike / 100,
-  car: partner.value.royaltyCar / 100
-}))
-
-// Утилиты для работы с датами
-// isCurrentMonth — попадает ли дата в ВЫБРАННЫЙ (anchor) месяц
-// isLastMonth — попадает ли дата в месяц, предшествующий выбранному
-const dateUtils = {
-  isCurrentMonth(date) {
-    const { year, monthIndex } = parseMonthKey(anchorMonth.value)
-    const d = new Date(date)
-    return d.getFullYear() === year && d.getMonth() === monthIndex
-  },
-
-  isLastMonth(date) {
-    const { year, monthIndex } = parseMonthKey(anchorMonth.value)
-    const d = new Date(date)
-    const prev = new Date(year, monthIndex - 1, 1)
-    return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth()
-  }
-}
-
-// Функции расчета выручки
-function calculatePaidAmount(bookings, filterFn) {
-  return bookings
-    .filter(filterFn)
-    .reduce((sum, booking) => sum + Number(booking.paid || 0), 0)
-}
-
-function sumPaidThisMonth(bookings) {
-  return calculatePaidAmount(bookings, b => dateUtils.isCurrentMonth(b.startRental))
-}
-
-function sumPaidLastMonth(bookings) {
-  return calculatePaidAmount(bookings, b => dateUtils.isLastMonth(b.startRental))
-}
+const vehicles = computed(() => data.value?.vehicles || [])
 
 // Обработка транспортных средств
 function processVehicles(isBike) {
-  const coefficient = isBike ? coefficients.value.bike : coefficients.value.car
-
-  return garages.value
-    .filter(g => isBike
-      ? (g.vehicleType === 'SCOOTER' || g.vehicleType === 'MOTORCYCLE')
-      : g.vehicleType === 'CAR'
-    )
-    .map(g => {
-      const currentRevenue = sumPaidThisMonth(g.bookings)
-      const lastMonthRevenue = sumPaidLastMonth(g.bookings)
-
-      return {
-        id: g.id,
-        name: g.name,
-        mileageNow: g.mileageNow || 0,
-        price: Number(g.price) || 0,
-        revenue: Math.round(currentRevenue * coefficient),
-        lastMonthRevenue: Math.round(lastMonthRevenue * coefficient)
-      }
-    })
+  return vehicles.value
+    .filter(v => isBike ? v.kind === 'bike' : v.kind === 'car')
+    .map(v => ({
+      id: v.id,
+      name: v.name,
+      isSold: v.isSold,
+      mileageNow: v.mileage || 0,
+      price: v.price || 0,
+      revenue: v.income || 0
+    }))
 }
 
 // Данные по транспорту
@@ -454,23 +395,23 @@ const filteredCars = computed(() => {
   )
 })
 
-// Итоговые суммы
+// Итоговые суммы. Проданные ТС приходят, только если принесли доход в месяце:
+// в доход они входят, в «Гараж» (штуки и стоимость) — нет.
 const totals = computed(() => {
   const bikes = bikeRevenue.value
   const cars = carRevenue.value
+  const inGarage = list => list.filter(x => !x.isSold)
 
   return {
     bike: {
       revenue: bikes.reduce((sum, x) => sum + x.revenue, 0),
-      lastMonthRevenue: bikes.reduce((sum, x) => sum + x.lastMonthRevenue, 0),
-      price: bikes.reduce((sum, x) => sum + x.price, 0),
-      count: bikes.length
+      price: inGarage(bikes).reduce((sum, x) => sum + x.price, 0),
+      count: inGarage(bikes).length
     },
     car: {
       revenue: cars.reduce((sum, x) => sum + x.revenue, 0),
-      lastMonthRevenue: cars.reduce((sum, x) => sum + x.lastMonthRevenue, 0),
-      price: cars.reduce((sum, x) => sum + x.price, 0),
-      count: cars.length
+      price: inGarage(cars).reduce((sum, x) => sum + x.price, 0),
+      count: inGarage(cars).length
     }
   }
 })
@@ -478,8 +419,6 @@ const totals = computed(() => {
 // Удобные алиасы для шаблона
 const totalBikeRevenue = computed(() => totals.value.bike.revenue)
 const totalCarRevenue = computed(() => totals.value.car.revenue)
-const totalBikeRevenueLastMonth = computed(() => totals.value.bike.lastMonthRevenue)
-const totalCarRevenueLastMonth = computed(() => totals.value.car.lastMonthRevenue)
 const totalBikePrice = computed(() => totals.value.bike.price)
 const totalCarPrice = computed(() => totals.value.car.price)
 const countBikes = computed(() => totals.value.bike.count)
@@ -593,20 +532,9 @@ function getSortIcon(key) {
   return sortDirection.value === 'asc' ? '▲' : '▼'
 }
 
-// Дебаунс для поиска
-const debouncedSearch = useDebounceFn(() => {
-  params2.q = searchTerm.value.trim()
-  refresh()
-}, 300)
-
-function onSearchInput() {
-  debouncedSearch()
-}
-
+// Поиск фильтрует уже загруженный список (filteredBikes/filteredCars)
 function clearSearch() {
   searchTerm.value = ''
-  params2.q = ''
-  refresh()
 }
 
 // Логаут с обработкой ошибок
@@ -614,19 +542,16 @@ async function logout() {
   try {
     loggingOut.value = true
 
-    await fetch(`${config.public.apiBase}/api/auth/logout`, {
+    await fetch(`${config.public.apiBase}/api/partner-portal/logout`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: partnerId.value }),
       keepalive: true
     })
   } catch (err) {
     console.error('Logout error:', err)
   } finally {
     // Очищаем localStorage в любом случае
-    const keysToRemove = ['role', 'email', 'userName', 'auth', 'name']
-    keysToRemove.forEach(key => localStorage.removeItem(key))
+    dropSession()
 
     loggingOut.value = false
     router.push('/login')
